@@ -1,13 +1,13 @@
 {
-  "originHash" : "3e0d490c4a14a836f54b42780c56aa929dd80dc34805ec36d29aa59c156a8a28",
+  "originHash" : "aa3b610661f9638121002a4550886729c9cdb511e05d0f5e55fb94244dce0b65",
   "pins" : [
     {
       "identity" : "phonenumberkit",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/marmelroy/PhoneNumberKit.git",
+      "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit.git",
       "state" : {
-        "revision" : "840ca3a89ced1a190e20ac93666ff3cdb376c973",
-        "version" : "4.2.11"
+        "revision" : "ab06a8333394f4a4fb6eecca447dae0aa06c1eca",
+        "version" : "5.0.4"
       }
     },
     {
@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
       "state" : {
-        "revision" : "626b5b7b2f45e1b0b1c6f4a309296d1d21d7311b",
-        "version" : "1.7.1"
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     }
   ],

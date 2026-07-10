@@ -45,7 +45,7 @@ jobs:
       HOMEBREW_TAP_GITHUB_TOKEN:        ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -57,12 +57,32 @@ jobs:
       - name: Resolve version
         id: version
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
             VERSION="${{ inputs.tag }}"
             VERSION="${VERSION#v}"
           fi
+
+          source version.env
+          if [[ "$KITH_VERSION" != "$VERSION" ]]; then
+            echo "::error::version.env has ${KITH_VERSION}, but the release tag requests ${VERSION}"
+            exit 1
+          fi
+
+          CLI_BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Sources/kith/Resources/Info.plist)"
+          APP_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/KithApp/Resources/Info.plist)"
+          APP_BUNDLE_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Sources/KithApp/Resources/Info.plist)"
+          for checked_version in "$CLI_BUNDLE_VERSION" "$APP_SHORT_VERSION" "$APP_BUNDLE_VERSION"; do
+            if [[ "$checked_version" != "$VERSION" ]]; then
+              echo "::error::a checked-in Info.plist version (${checked_version}) does not match ${VERSION}"
+              exit 1
+            fi
+          done
+
+          grep -Fq "let agentVersion = \"${VERSION}\"" Sources/KithAgent/main.swift
+          grep -Fq "tag: \"v${VERSION}\"" Formula/kith.rb
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -140,7 +160,7 @@ jobs:
           echo "==> packaged tarball layout verified + resource bundles load"
 
       - name: Create or update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: kith ${{ steps.version.outputs.version }}
@@ -174,6 +194,7 @@ jobs:
           PY
 
           cd "$TAP_DIR"
+          brew style --cask "$CASK_PATH"
           git config user.name  "supaku-bot"
           git config user.email "bot@supaku.invalid"
           git add Casks/kith.rb

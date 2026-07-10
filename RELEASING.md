@@ -5,9 +5,14 @@ Releases are tag-driven. Pushing a tag matching `v*.*.*` triggers `.github/workf
 ## Cutting a release
 
 ```sh
-# 1. Update version.env (and Info.plist's CFBundleVersion if it diverges).
+# 1. Bump the checked-in version in all release surfaces. The release
+#    workflow verifies these agree with the tag before it builds.
 $EDITOR version.env
+$EDITOR Sources/KithAgent/main.swift
+$EDITOR Sources/kith/Generated/BuildInfo.swift
 $EDITOR Sources/kith/Resources/Info.plist
+$EDITOR Sources/KithApp/Resources/Info.plist
+$EDITOR Formula/kith.rb
 
 # 2. REHEARSE the release locally. Don't skip this — it's the only thing
 #    that catches packaging regressions (e.g. a missing SwiftPM resource
@@ -15,11 +20,11 @@ $EDITOR Sources/kith/Resources/Info.plist
 bash scripts/release-rehearsal.sh
 
 # 3. Commit, tag, push.
-git add version.env Sources/kith/Resources/Info.plist
-git commit -m "release: 0.1.1"
-git tag -a v0.1.1 -m "kith 0.1.1"
+git add -A
+git commit -m "release: 0.2.4"
+git tag -a v0.2.4 -m "kith 0.2.4"
 git push origin main
-git push origin v0.1.1
+git push origin v0.2.4
 ```
 
 Watch the workflow at https://github.com/supaku/kith/actions/workflows/release.yml.

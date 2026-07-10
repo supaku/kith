@@ -16,9 +16,9 @@ let package = Package(
         .library(name: "KithMessagesService", targets: ["KithMessagesService"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
-        .package(url: "https://github.com/stephencelis/SQLite.swift.git",  from: "0.15.5"),
-        .package(url: "https://github.com/marmelroy/PhoneNumberKit.git",   from: "4.2.5"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
+        .package(url: "https://github.com/stephencelis/SQLite.swift.git",  from: "0.16.0"),
+        .package(url: "https://github.com/PhoneNumberKit/PhoneNumberKit.git", from: "5.0.4"),
         .package(url: "https://github.com/trilemma-dev/SecureXPC.git",     from: "0.8.0"),
     ],
     targets: [

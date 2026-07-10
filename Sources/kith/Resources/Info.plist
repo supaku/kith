@@ -7,7 +7,7 @@
     <key>CFBundleName</key>
     <string>kith</string>
     <key>CFBundleVersion</key>
-    <string>0.1.1</string>
+    <string>0.2.4</string>
     <key>NSContactsUsageDescription</key>
     <string>kith reads local Contacts to resolve names to people and to chats.</string>
 </dict>
