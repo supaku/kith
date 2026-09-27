@@ -1,0 +1,25 @@
+name: Donmai architecture drift
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: donmai-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  assess:
+    name: Assess pull request diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assess with Donmai
+        uses: RenseiAI/donmai-drift-action@729b5d1fe1525eabf21517cf9c43be5f0a6fc7d6
+        with:
+          gate-policy: no-severity-high
+          comment: auto
