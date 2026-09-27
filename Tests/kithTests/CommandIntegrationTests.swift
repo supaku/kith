@@ -76,18 +76,32 @@ struct CommandIntegrationTests {
         #expect(result.stdout.contains("anyOf"))
     }
 
-    @Test("--color flag overrides env (always vs never)")
+    @Test("--color flag overrides env on a missing local DB error")
     func colorFlagOverride() throws {
-        // --color always with NO_COLOR set should still color.
-        let always = try run(["doctor"], env: ["NO_COLOR": "1"])
-        // doctor's exit will be 5 because we don't have full perms in CI;
-        // but we just care about stderr/stdout content here.
-        let alwaysOutput = always.stdout + always.stderr
-        // Without --color always, NO_COLOR wins → no escape codes.
-        #expect(!alwaysOutput.contains("\u{1B}["))
-        let forced = try run(["doctor", "--color", "always"], env: ["NO_COLOR": "1"])
-        let forcedOutput = forced.stdout + forced.stderr
-        #expect(forcedOutput.contains("\u{1B}["))
+        let fixtureDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kith-color-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: fixtureDir, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: fixtureDir) }
+        let missingDB = fixtureDir.appendingPathComponent("missing.db").path
+        let env = ["KITH_DB_PATH": missingDB, "KITH_COLOR": "auto", "NO_COLOR": "1"]
+        #expect(!FileManager.default.fileExists(atPath: missingDB))
+
+        // A read-only open fails before the local pipeline constructs ContactsStore.
+        let plain = try run(["chats"], env: env)
+        #expect(plain.code == 6)
+        #expect(plain.stderr.contains("kith: error:"))
+        #expect(!plain.stderr.contains("\u{1B}["))
+
+        let forced = try run(["chats", "--color", "always"], env: env)
+        #expect(forced.code == 6)
+        #expect(forced.stderr.contains("\u{1B}[1;31m"))
+
+        let machine = try run(["chats", "--jsonl"], env: env)
+        #expect(machine.code == 6)
+        let error = try JSONSerialization.jsonObject(with: Data(machine.stderr.utf8)) as? [String: Any]
+        #expect(error?["code"] as? String == "DB_UNAVAILABLE")
+        #expect(error?["exit"] as? Int == 6)
+        #expect(!FileManager.default.fileExists(atPath: missingDB))
     }
 
     @Test("kith tools help dumps every command's help in one stream")
