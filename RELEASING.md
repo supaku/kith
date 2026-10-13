@@ -34,12 +34,30 @@ Watch the workflow at https://github.com/supaku/kith/actions/workflows/release.y
 `scripts/release-rehearsal.sh` is a local equivalent of the CI package + smoke steps. It:
 
 1. `swift build -c release --arch arm64`
-2. Calls `scripts/package.sh` to assemble the libexec/wrapper tarball — same script CI runs.
+2. Calls `scripts/package.sh` to assemble the `libexec/` + `Kith.app` tarball — same script CI runs.
 3. Extracts the tarball into a temp dir.
-4. Symlinks the wrapper from a different prefix (mimics how brew installs `/opt/homebrew/bin/kith` as a symlink into the cask's staged path).
-5. Runs `kith version` and `kith chats --participant '+14155551212'` through the symlink. The phone-parse path forces PhoneNumberKit to load its resource bundle — if a SwiftPM dep added a new bundle that didn't make it into `scripts/package.sh`'s `REQUIRED_BUNDLES` list, this fails loudly here rather than at user runtime.
+4. Runs `scripts/check-package-layout.sh` on it (CI runs the same check on every PR and on the release tarball). The check:
+   - asserts every file the cask installs is present, and that there is **no** top-level `kith` launcher;
+   - asserts `libexec/kith` is a Mach-O executable (`file`), not a script;
+   - symlinks `libexec/kith` from a different prefix (what brew does for `/opt/homebrew/bin/kith`), a symlink chain and a bare `PATH` lookup, then runs `kith version` and `kith chats --participant '(415) 555-1111'` over a fixture `chat.db` (`KITH_DB_PATH` local mode). The chat only matches if PhoneNumberKit parsed the number from its resource bundle and SQLite.swift opened the DB. No Contacts or Messages data is touched;
+   - runs a negative control: the same binary without its bundles must fail. Before probing it hides any `.build/…/*.bundle` fallback path SwiftPM embedded in the binary, so the build machine's `.build/` can't mask a missing `REQUIRED_BUNDLES` entry.
 
 If the rehearsal exits 0, the package is shippable. Run it before every tag.
+
+## CLI layout (no wrapper)
+
+The cask links the signed Mach-O straight onto `PATH`:
+
+```ruby
+app "Kith.app"
+binary "libexec/kith", target: "kith"
+```
+
+so `/opt/homebrew/bin/kith -> /opt/homebrew/Caskroom/kith/<version>/libexec/kith`. There is no shell launcher, which lets callers digest-pin the file they execute. The SwiftPM resource bundles sit next to the real binary in `libexec/`. `Bundle.main.bundleURL` is the symlink's directory (`bin/`), but `KithPhoneNumberNormalizer` also looks up `Bundle(for:)`, whose path comes from dyld and is symlink-resolved, so the bundles are found.
+
+`Kith.app` is unchanged. It registers the `KithAgent` LaunchAgent, which holds the Contacts and Full Disk Access (TCC) grants; the CLI reaches it over XPC.
+
+Tarballs from 0.2.5 on have no top-level `kith`. The `supaku/homebrew-tools` cask must use the `binary "libexec/kith", target: "kith"` stanza before such a release is tagged. The release workflow checks this and stops if the cask still links a top-level `kith`.
 
 ## Required secrets
 
@@ -78,14 +96,14 @@ Until this secret exists, the release workflow's "Bump supaku/homebrew-tools cas
 
 1. Checks out the tag.
 2. Selects Xcode 16+ (Swift 6) on `macos-15`.
-3. Stamps `Sources/kith/Generated/BuildInfo.swift` with version + commit + ISO build timestamp.
-4. `swift build -c release --arch arm64`.
+3. Checks that the version surfaces agree with the tag and that the tap cask links `libexec/kith` (see "CLI layout" above).
+4. Stamps `Sources/kith/Generated/BuildInfo.swift` with version + commit + ISO build timestamp, then runs `swift build -c release --arch arm64`.
 5. Runs `scripts/sign-and-notarize.sh`:
    - imports the Developer ID cert into an ephemeral keychain in `$RUNNER_TEMP`
    - codesigns with hardened runtime + `--identifier com.supaku.kith`
    - `ditto`-zips the binary and submits to `xcrun notarytool submit --wait`
    - attempts `stapler staple` (always fails on bare CLI binaries — Gatekeeper does an online ticket lookup at first run instead)
-6. Packages `kith-<version>-macos-arm64.tar.gz` + `.sha256` into `dist/`.
+6. Packages `kith-<version>-macos-arm64.tar.gz` + `.sha256` into `dist/`, extracts it and runs `scripts/check-package-layout.sh`.
 7. Creates/updates the GitHub Release, attaches both files.
 8. Clones `supaku/homebrew-tools`, rewrites `version` and `sha256` in `Casks/kith.rb`, commits, pushes.
 

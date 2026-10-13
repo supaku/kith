@@ -19,7 +19,7 @@ import PhoneNumberKit
 /// Solution: bypass `Bundle.module` entirely. Construct `PhoneNumberUtility`
 /// with a custom `metadataCallback` that searches the four locations the
 /// JSON is realistically present in across all our distribution shapes
-/// (.app, libexec wrapper, dev `.build/release/`, dev test bundle).
+/// (.app, symlinked libexec CLI, dev `.build/release/`, dev test bundle).
 public final class KithPhoneNumberNormalizer: @unchecked Sendable {
     private let utility: PhoneNumberUtility
 
@@ -41,10 +41,14 @@ public final class KithPhoneNumberNormalizer: @unchecked Sendable {
     ///      — matches an `.app` install: agent inside Kith.app finds the
     ///      bundle in `Contents/Resources/`.
     ///   2. `Bundle.main.bundleURL/PhoneNumberKit_PhoneNumberKit.bundle/…`
-    ///      — matches the standalone-CLI layout: kith binary in libexec/
-    ///      finds the bundle as a sibling.
-    ///   3. The class's own bundle's `resourceURL` — covers test runs and
-    ///      framework-style distribution.
+    ///      — matches the standalone CLI when it is invoked by its real
+    ///      path. `Bundle.main` does NOT resolve symlinks: invoked as
+    ///      `/opt/homebrew/bin/kith -> …/libexec/kith`, this is `bin/`.
+    ///   3. The class's own bundle's `resourceURL` — `Bundle(for:)` follows
+    ///      the dyld image path, which is the symlink-resolved executable.
+    ///      This is what lets the cask link `libexec/kith` straight onto
+    ///      PATH with no wrapper (scripts/check-package-layout.sh proves it).
+    ///      Also covers test runs and framework-style distribution.
     ///   4. Falls through to PhoneNumberKit's own default callback (which
     ///      uses `Bundle.module`) so dev builds running directly from
     ///      `.build/release/` still work without changes.

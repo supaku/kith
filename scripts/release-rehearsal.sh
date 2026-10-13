@@ -39,8 +39,9 @@
 #                                 verify XPC round-trip via `kith doctor`.
 #                                 Independent of the signing modes.
 #
-# The phone-parse smoke ("kith chats --jsonl …") catches missing SwiftPM
-# resource bundles — the failure mode that made it past v0.1.0. Keep it.
+# scripts/check-package-layout.sh (phone-parse probe through a symlink) catches
+# missing SwiftPM resource bundles — the failure mode that made it past
+# v0.1.0 — and a shell wrapper creeping back into the package. Keep it.
 
 set -euo pipefail
 
@@ -186,39 +187,17 @@ EXTRACT="$(mktemp -d)"
 EXTRACT_DIR="$EXTRACT"
 tar -C "$EXTRACT" -xzf "$ARCHIVE"
 
-# Verify the layout the cask installs.
-for needed in kith libexec/kith Kith.app/Contents/Info.plist \
-              Kith.app/Contents/MacOS/KithApp Kith.app/Contents/MacOS/KithAgent \
-              Kith.app/Contents/Library/LaunchAgents/com.supaku.kith.agent.plist \
-              Kith.app/Contents/Resources/PhoneNumberKit_PhoneNumberKit.bundle \
-              Kith.app/Contents/Resources/SQLite.swift_SQLite.bundle; do
-  if [[ ! -e "$EXTRACT/$needed" ]]; then
-    echo "FAIL: tarball missing $needed" >&2
-    exit 1
-  fi
-done
+# Verify the layout the cask installs. The cask links libexec/kith straight
+# onto PATH (/opt/homebrew/bin/kith -> Caskroom/kith/<v>/libexec/kith).
+# check-package-layout.sh asserts every installed entry is present, there is
+# no wrapper, libexec/kith is a Mach-O, and the phone-parse + SQLite probe
+# passes through symlinks. It also runs a negative control without the
+# resource bundles, so a missing REQUIRED_BUNDLES entry fails here.
+echo "==> check-package-layout.sh against the extracted tarball"
+bash scripts/check-package-layout.sh "$EXTRACT"
 
-# Different-prefix symlink mimics the brew install layout: the user invokes
-# kith via /opt/homebrew/bin/kith, which is a symlink into the cask's
-# staged_path. Bundle.main resolves relative to argv[0] — i.e. relative to
-# the symlink path, NOT the resolved target. The wrapper script handles this
-# by chasing the symlink chain itself before exec'ing the real binary.
-ln -s "$EXTRACT/kith" "$EXTRACT/kith-link"
-
-echo "==> kith version (basic launch through the wrapper)"
-"$EXTRACT/kith-link" version
-
-echo "==> kith chats --jsonl with bogus KITH_DB_PATH (forces local-mode resource load)"
-out="$(KITH_DB_PATH="/tmp/kith-rehearsal-nonexistent-$$.db" "$EXTRACT/kith-link" chats --jsonl 2>&1 || true)"
-if echo "$out" | grep -q "could not load resource bundle"; then
-  echo
-  echo "FAIL: a SwiftPM resource bundle is missing from the package." >&2
-  echo "      look at scripts/package.sh's REQUIRED_BUNDLES list and the .build/release/ dir." >&2
-  echo
-  echo "raw output:"
-  echo "$out" >&2
-  exit 1
-fi
+# Brew-style link for the agent steps below.
+ln -s "$EXTRACT/libexec/kith" "$EXTRACT/kith-link"
 
 # ---- Optional: bootstrap Kith.app + verify against the live agent -----------
 if [[ "${KITH_REHEARSE_AGENT:-0}" == "1" ]]; then

@@ -87,6 +87,20 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify the tap cask links the native CLI
+        # Release tarballs ship no top-level `kith` launcher; the CLI is the
+        # Mach-O at libexec/kith. A cask that still says `binary "kith"`
+        # would fail to install, so refuse to release until the tap links
+        # libexec/kith directly. The bump step below only rewrites version
+        # and sha256.
+        run: |
+          set -euo pipefail
+          cask="$(curl -fsSL https://raw.githubusercontent.com/supaku/homebrew-tools/main/Casks/kith.rb)"
+          if [[ "$cask" != *'binary "libexec/kith", target: "kith"'* ]]; then
+            echo "::error::supaku/homebrew-tools Casks/kith.rb must use binary \"libexec/kith\", target: \"kith\" before this release"
+            exit 1
+          fi
+
       - name: Stamp BuildInfo
         run: |
           BUILT_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -107,7 +121,7 @@ jobs:
 
       - name: Stage Kith.app + CLI
         # v0.2.0+ flow: package.sh has two subcommands. `stage` assembles
-        # dist/staging/{kith, libexec/, Kith.app/}; sign-and-notarize.sh then
+        # dist/staging/{libexec/, Kith.app/}; sign-and-notarize.sh then
         # signs in place; `tarball` zips the (signed) staging dir into the
         # release artifact. Keeps the codesign step inside the .app bundle
         # boundary so notarytool/stapler can attest the whole layout.
@@ -130,35 +144,19 @@ jobs:
           ls -lh dist/
 
       - name: Smoke test packaged tarball
-        # Extracts the artifact users will actually receive and exercises
-        # the resource-bundle load path. v0.2.0+ requires KITH_DB_PATH
-        # because `chats` otherwise tries to round-trip via the agent
-        # (which doesn't exist in CI). KITH_DB_PATH triggers the CLI's
-        # local-mode fallback, which still loads SwiftPM resource bundles.
+        # Extracts the artifact users will actually receive. The layout check
+        # asserts every installed entry is present and libexec/kith is a
+        # Mach-O with no wrapper, then runs a phone-parse + SQLite probe
+        # through brew-style symlinks (local mode via a fixture KITH_DB_PATH,
+        # so no agent is needed), plus a negative control without the
+        # resource bundles. It hides the build-dir bundle fallback SwiftPM
+        # embeds in the binary so this runner's .build/ can't mask a broken
+        # package.
         run: |
           set -euo pipefail
           EXTRACT="$(mktemp -d)"
           tar -C "$EXTRACT" -xzf "${{ steps.package.outputs.archive }}"
-          for needed in kith libexec/kith Kith.app/Contents/Info.plist \
-                        Kith.app/Contents/MacOS/KithApp \
-                        Kith.app/Contents/MacOS/KithAgent \
-                        Kith.app/Contents/Library/LaunchAgents/com.supaku.kith.agent.plist \
-                        Kith.app/Contents/Resources/PhoneNumberKit_PhoneNumberKit.bundle \
-                        Kith.app/Contents/Resources/SQLite.swift_SQLite.bundle; do
-            if [[ ! -e "$EXTRACT/$needed" ]]; then
-              echo "::error::tarball missing $needed"
-              exit 1
-            fi
-          done
-          ln -s "$EXTRACT/kith" "$EXTRACT/kith-link"
-          "$EXTRACT/kith-link" version
-          OUTPUT="$(KITH_DB_PATH="/tmp/kith-ci-nonexistent.db" "$EXTRACT/kith-link" chats --jsonl 2>&1 || true)"
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -q "could not load resource bundle"; then
-            echo "::error::SwiftPM resource bundle missing from packaged tarball"
-            exit 1
-          fi
-          echo "==> packaged tarball layout verified + resource bundles load"
+          bash scripts/check-package-layout.sh "$EXTRACT"
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v3
