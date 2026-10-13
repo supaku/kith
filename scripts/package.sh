@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Package a kith release into:
 #   1. dist/staging/Kith.app                 — the bundled app + agent
-#   2. dist/staging/kith                     — wrapper for the CLI
-#   3. dist/staging/libexec/{kith,*.bundle}  — CLI binary + SwiftPM resources
+#   2. dist/staging/libexec/{kith,*.bundle}  — native CLI binary + SwiftPM resources
 # Then tarball dist/staging/ to <output-tarball-path> for the cask.
+#
+# There is no CLI launcher script. The supaku/tools cask links the Mach-O
+# directly (`binary "libexec/kith", target: "kith"`), so the file on PATH is
+# the signed binary itself. scripts/check-package-layout.sh enforces this shape.
 #
 # Two subcommands:
 #   bash scripts/package.sh stage [<staging-dir>]    # default: dist/staging
@@ -64,30 +67,17 @@ stage() {
   rm -rf "$STAGE"
   mkdir -p "$STAGE/libexec"
 
-  # --- CLI: wrapper + libexec/ -----------------------------------------------
+  # --- CLI: libexec/{kith,*.bundle} -----------------------------------------
+  # The resource bundles sit next to the real executable. Invoking kith
+  # through a symlink (/opt/homebrew/bin/kith -> …/libexec/kith) still finds
+  # them: KithPhoneNumberNormalizer looks up `Bundle(for:)`, which follows the
+  # dyld image path, and that path is the symlink-resolved real file.
+  # `Bundle.main.bundleURL` is NOT resolved (it is the symlink's directory),
+  # so don't rely on it. scripts/check-package-layout.sh proves the symlinked case.
   cp .build/release/kith "$STAGE/libexec/kith"
   for bundle in "${REQUIRED_BUNDLES[@]}"; do
     cp -R ".build/release/$bundle" "$STAGE/libexec/"
   done
-
-  # /bin/sh wrapper that resolves its own symlink chain so it can find
-  # libexec/ regardless of how it was invoked. Bundle.main.bundleURL ends
-  # up pointing at libexec/, where SwiftPM looks for resource bundles.
-  cat > "$STAGE/kith" <<'WRAPPER'
-#!/bin/sh
-SOURCE="$0"
-while [ -L "$SOURCE" ]; do
-  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  case "$SOURCE" in
-    /*) ;;
-    *) SOURCE="$DIR/$SOURCE" ;;
-  esac
-done
-DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-exec "$DIR/libexec/kith" "$@"
-WRAPPER
-  chmod +x "$STAGE/kith"
 
   # --- Kith.app bundle -------------------------------------------------------
   local APP="$STAGE/Kith.app"
@@ -151,7 +141,7 @@ tarball() {
     exit 1
   fi
   mkdir -p "$(dirname "$ARCHIVE")"
-  tar -C "$STAGE" -czf "$ARCHIVE" kith libexec Kith.app
+  tar -C "$STAGE" -czf "$ARCHIVE" libexec Kith.app
   echo "==> wrote $ARCHIVE ($(du -h "$ARCHIVE" | awk '{print $1}'))"
 }
 

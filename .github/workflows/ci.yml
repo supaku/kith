@@ -47,6 +47,41 @@ jobs:
       - name: swift test
         run: swift test --parallel
 
+  package-layout:
+    # Builds the release products, stages them exactly as the release
+    # workflow does, and asserts the CLI the cask links onto PATH is a
+    # native Mach-O (no shell wrapper) whose resource bundles load when it
+    # is invoked through a symlink.
+    name: Package layout (native CLI, symlinked)
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 16 (Swift 6 toolchain)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v6
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-macos-15-spm-release-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-macos-15-spm-release-
+
+      - name: swift build -c release
+        run: swift build -c release --arch arm64
+
+      - name: Stage + check layout
+        run: |
+          set -euo pipefail
+          bash scripts/package.sh stage "$RUNNER_TEMP/kith-stage"
+          bash scripts/check-package-layout.sh "$RUNNER_TEMP/kith-stage"
+
   gitleaks:
     name: Secret scan
     runs-on: ubuntu-latest
